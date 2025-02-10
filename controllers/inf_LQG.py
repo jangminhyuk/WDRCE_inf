@@ -3,6 +3,7 @@
 
 import numpy as np
 import time
+import control
 
 class inf_LQG:
     def __init__(self, T, dist, noise_dist, system_data, mu_hat, Sigma_hat, x0_mean, x0_cov, x0_max, x0_min, mu_w, Sigma_w, w_max, w_min, v_max, v_min, mu_v, v_mean_hat, M_hat, x0_mean_hat, x0_cov_hat):
@@ -116,6 +117,69 @@ class inf_LQG:
     
     def KF_riccati(self, P_ss=None, P_w=None):
 #        P_ss = np.zeros((self.nx,self.nx))
+        # --- Helper functions for stabilizability and detectability checks ---
+
+        def is_stabilizable(A, B, tol=1e-9):
+            """
+            Check stabilizability of (A,B) using the PBH test.
+            For each eigenvalue λ of A with |λ| >= 1 (i.e. unstable or marginally stable),
+            the matrix [λI - A, B] must have full row rank.
+            """
+            n = A.shape[0]
+            eigenvals, _ = np.linalg.eig(A)
+            for eig in eigenvals:
+                if np.abs(eig) >= 1 - tol:  # Consider unstable eigenvalues
+                    M = np.hstack([eig * np.eye(n) - A, B])
+                    if np.linalg.matrix_rank(M, tol) < n:
+                        return False
+            return True
+
+        def is_detectable(A, C, tol=1e-9):
+            """
+            Check detectability of (A,C) using the PBH test.
+            For each eigenvalue λ of A with |λ| >= 1,
+            the matrix [λI - A; C] must have full column rank.
+            """
+            n = A.shape[0]
+            eigenvals, _ = np.linalg.eig(A)
+            for eig in eigenvals:
+                if np.abs(eig) >= 1 - tol:
+                    M = np.vstack([eig * np.eye(n) - A, C])
+                    if np.linalg.matrix_rank(M, tol) < n:
+                        return False
+            return True
+
+        # --- End helper functions ---
+
+        # Check that process noise covariance (Q) is provided.
+        if P_w is None:
+            print("Process noise covariance P_w (Q) not provided. Exiting KF Riccati.")
+            return
+
+        # Since stabilizability is defined for (A, B) with B such that Q = B B^T,
+        # compute a square-root of P_w.
+        try:
+            # Try Cholesky (works if P_w is positive definite)
+            B = np.linalg.cholesky(P_w)
+        except np.linalg.LinAlgError:
+            # Fallback: use eigenvalue decomposition to compute a symmetric square-root.
+            eigvals, eigvecs = np.linalg.eigh(P_w)
+            sqrt_eigvals = np.sqrt(np.maximum(eigvals, 0))
+            B = eigvecs @ np.diag(sqrt_eigvals)
+
+        # Check stabilizability of (A, sqrt(Q))
+        if not is_stabilizable(self.A, B):
+            print("Warning: The pair (A, sqrt(P_w)) is not stabilizable!")
+        else:
+            print("The pair (A, sqrt(P_w)) is stabilizable.")
+
+        # Check detectability of (A, C)
+        if not is_detectable(self.A, self.C):
+            print("Warning: The pair (A, C) is not detectable!")
+        else:
+            print("The pair (A, C) is detectable.")
+            
+        ## 
         for t in range(self.max_iteration):
             P_ss_temp = self.A @ (P_ss - P_ss @ self.C.T @ np.linalg.solve(self.C @ P_ss @ self.C.T + self.M_hat, self.C @ P_ss)) @ self.A.T + P_w
             max_diff = 0
@@ -128,7 +192,7 @@ class inf_LQG:
                 P_post = P_ss - P_ss @ self.C.T @ np.linalg.solve(self.C @ P_ss @ self.C.T + self.M_hat, self.C @ P_ss)
                 self.X_pred = P_post
                 return
-        print("Minimax Riccati iteration did not converge")
+        print("Minimax KF Riccati iteration did not converge: inf LQG")
         P_post = P_ss - P_ss @ self.C.T @ np.linalg.solve(self.C @ P_ss @ self.C.T + self.M_hat, self.C @ P_ss)
         self.X_pred = P_post
         
@@ -191,7 +255,7 @@ class inf_LQG:
                 offline_end = time.time()
                 self.offline_time = offline_end - offline_start # time consumed for offline process
                 return
-        print("Minimax Riccati iteration did not converge")
+        print("Minimax Riccati iteration did not converge : inf LQG")
         self.flag = False
         self.P_ss = P
         self.S_ss = S

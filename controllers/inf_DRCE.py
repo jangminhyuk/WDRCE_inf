@@ -60,7 +60,7 @@ class inf_DRCE:
         elif self.noise_dist=="quadratic":
             self.true_v_init = self.quadratic(self.v_max, self.v_min) #observation noise
             
-        print("inf WDR-CE ", self.dist, " / ", self.noise_dist)    
+        print("inf DRCE ", self.dist, " / ", self.noise_dist)    
         self.theta_w = theta_w
         self.theta_v = theta_v
         self.theta_x0 = theta_x0
@@ -198,7 +198,7 @@ class inf_DRCE:
                 if np.max(sigma_wc_ss) >= 1e2:
                     return False
                 return True
-        print("Minimax Riccati iteration did not converge")
+        print("Minimax Riccati iteration did not converge : inf DRCE")
 
     def uniform(self, a, b, N=1):
         n = a.shape[0]
@@ -429,7 +429,7 @@ class inf_DRCE:
                 self.offline_time = offline_end - offline_start
                 return
             
-        print("Minimax Riccati iteration did not converge")
+        print("Minimax Riccati iteration did not converge : inf DRCE")
         self.P_ss = P
         self.S_ss = S
         self.r_ss = r

@@ -34,10 +34,11 @@ def plot_experiment_lambda3(dist, noise_dist):
         base_path = os.path.join(base_path, "raw")
     
     # Define regex patterns for the three controllers.
-    pattern_inf_drce = r"inf_drce_(\d+(?:_\d+)?)and_(\d+(?:_\d+)?)\.pkl"
-    pattern_inf_wdrc = r"inf_wdrc_(\d+(?:_\d+)?)and_(\d+(?:_\d+)?)\.pkl"
-    pattern_inf_lqg   = r"inf_lqg\.pkl"
-    
+    pattern_inf_drce = r"drce_finite_(\d+(?:_\d+)?)and_(\d+(?:_\d+)?)\.pkl"
+    pattern_inf_wdrc = r"drce_infinite_(\d+(?:_\d+)?)and_(\d+(?:_\d+)?)\.pkl"
+    pattern_inf_lqg   = r"lqg\.pkl"
+
+
     # Helper: convert an underscore string (e.g. "20" or "20_0") to a float.
     def convert_to_float(val):
         return float(val.replace('_', '.'))
@@ -86,8 +87,8 @@ def plot_experiment_lambda3(dist, noise_dist):
             # For inf_LQG, the cost is independent of lambda and theta_v.
             # Define the parameter ranges based on the disturbance type.
             if dist == "normal":
-                lambda_list = np.array([12, 15, 20, 25, 30, 35, 40])
-                theta_v_list = np.array([0.1, 0.5, 1.0, 2.0, 3.0, 4.0])
+                lambda_list = np.array([30, 40, 50, 60])
+                theta_v_list = np.array([0.01, 0.05, 0.1])
             else:
                 lambda_list = np.array([15, 20, 25, 30, 35, 40])
                 theta_v_list = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
@@ -138,7 +139,7 @@ def plot_experiment_lambda3(dist, noise_dist):
         (lambda_grid_wdrc, theta_v_grid_wdrc), method='cubic'
     )
     surface_wdrc = ax.plot_surface(lambda_grid_wdrc, theta_v_grid_wdrc, cost_grid_wdrc,
-                                   alpha=0.5, color='green')
+                                   alpha=0.5, color='blue')
     
     # Create grid for inf_DRCE.
     lambda_grid_drce, theta_v_grid_drce = np.meshgrid(
@@ -150,7 +151,7 @@ def plot_experiment_lambda3(dist, noise_dist):
         (lambda_grid_drce, theta_v_grid_drce), method='cubic'
     )
     surface_drce = ax.plot_surface(lambda_grid_drce, theta_v_grid_drce, cost_grid_drce,
-                                   alpha=0.5, color='blue')
+                                   alpha=0.5, color='green')
     
     # Add a legend.
     surfaces = [surface_lqg, surface_wdrc, surface_drce]

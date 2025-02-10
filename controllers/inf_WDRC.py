@@ -191,7 +191,7 @@ class inf_WDRC:
                 if np.max(sigma_wc_ss) >= 1e2:
                     return False
                 return True
-        print("Minimax Riccati iteration did not converge")
+        print("Minimax Riccati iteration did not converge : inf WDRC")
 
     def uniform(self, a, b, N=1):
         n = a.shape[0]
@@ -396,7 +396,7 @@ class inf_WDRC:
                 self.offline_time = offline_end - offline_start # time consumed for offline process
                 return
             
-        print("Minimax Riccati iteration did not converge")
+        print("Minimax Riccati iteration did not converge at inf WDRC")
         self.P_ss = P
         self.S_ss = S
         self.r_ss = r
