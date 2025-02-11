@@ -84,7 +84,7 @@ class DRCE:
         self.infimum_penalty = self.binarysearch_infimum_penalty_finite()
         print("Infimum penalty:", self.infimum_penalty)
         print("Optimizing lambda . . . Please wait")
-        penalty_values = np.linspace(2* self.infimum_penalty, 1e2 * self.infimum_penalty, num=10)
+        penalty_values = np.linspace(3* self.infimum_penalty, 10* self.infimum_penalty, num=10)
         
         # Uncomment below for parallel computation
         # objectives = Parallel(n_jobs=-1)(delayed(self.objective)(np.array([p])) for p in penalty_values)
@@ -272,10 +272,10 @@ class DRCE:
         
         
         prob.solve(solver=cp.MOSEK)
-        if prob.status in ["infeasible", "unbounded"]:
-            print("theta_w : ", self.theta_w, " theta_v : ", self.theta_v)
-            print("Lambda_:" , Lambda_)
-            print(prob.status, 'False in DRCE SDP !!!!!!!!')
+        # if prob.status in ["infeasible", "unbounded"]:
+        #     print("theta_w : ", self.theta_w, " theta_v : ", self.theta_v)
+        #     print("Lambda_:" , Lambda_)
+        #     print(prob.status, 'False in DRCE SDP !!!!!!!!')
         
         sol = prob.variables()
         #['V', 'Sigma_wc', 'Y', 'X_pred', 'M_test', 'Z']

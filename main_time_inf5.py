@@ -2,21 +2,22 @@
 # -*- coding: utf-8 -*-
 """
 This file generates data for a time-horizon experiment comparing the control cost
-(as computed by LQG, inf_LQG, finite–horizon DRCE, and infinite–horizon DRCE)
+(as computed by LQG, inf_LQG, finite–horizon DRCE, infinite–horizon DRCE, and finite–horizon DRLQC)
 as a function of the simulation horizon T. The ambiguity parameters are fixed:
     theta_w = 1.0 and theta_v = 1.0.
 When the flag --use_lambda is provided, the controllers are instantiated with
 use_lambda=True and the value λ = 20.0 is used.
 For each horizon T (e.g., 2, 4, …, 50):
   1. Data is generated and nominal parameters are estimated once (via EM).
-  2. Using these nominal parameters, four controllers are instantiated:
+  2. Using these nominal parameters, instantiate five controllers:
        - Finite–horizon LQG (using tiled parameters)
-       - Infinite–horizon LQG (using non–tiled, steady–state parameters)
+       - Infinite–horizon LQG (using non–tiled parameters)
        - Finite–horizon DRCE (using tiled parameters)
        - Infinite–horizon DRCE (using non–tiled parameters)
+       - Finite–horizon DRLQC (using tiled parameters)
   3. Then, num_sim forward simulations are run (using the same nominal distribution).
 Additionally, the entire experiment is repeated N=10 times for each time horizon.
-The summary (average and std of cost) is saved in a folder whose name includes "experiment_4".
+The summary (average and std of cost) is saved in a folder whose name includes "experiment_5".
 """
 
 import numpy as np
@@ -25,6 +26,8 @@ from controllers.inf_DRCE import inf_DRCE
 from controllers.inf_LQG import inf_LQG
 from controllers.DRCE import DRCE
 from controllers.LQG import LQG
+# --- DRLQC Import (added) ---
+from controllers.DRLQC import DRLQC
 from numpy.linalg import norm
 from pykalman import KalmanFilter
 import os
@@ -133,41 +136,16 @@ def generate_data(T, nx, ny, nu, A, B, C, mu_w, Sigma_w, mu_v, M,
 # --- Time-Horizon Experiment Function ---
 # For each time horizon T, we:
 # 1. Generate data and run EM to obtain nominal parameters.
-# 2. Using these nominal parameters, instantiate four controllers:
+# 2. Using these nominal parameters, instantiate five controllers:
 #    - Finite–horizon LQG (using tiled parameters)
 #    - Infinite–horizon LQG (using non-tiled parameters)
 #    - Finite–horizon DRCE (using tiled parameters)
 #    - Infinite–horizon DRCE (using non-tiled parameters)
+#    - Finite–horizon DRLQC (using tiled parameters)  <-- (added)
 # 3. Run num_sim forward simulations and record the cost.
 def run_experiment_for_horizon(T, num_sim, dist, noise_dist, use_lambda):
     
     # --- System Initialization ---
-    # nx = 10 #state dimension
-    # nu = 10 #control input dimension
-    # ny = 10#output dimension
-    # temp = np.ones((nx, nx))
-    # A = 0.2*(np.eye(nx) + np.triu(temp, 1) - np.triu(temp, 2))
-    # B= np.eye(10)
-    # C = Q = R = Qf = np.eye(10) 
-    # nx = 10  # state dimension
-    # nu = 10  # control input dimension
-    # ny = 8   # output dimension
-    # temp = np.ones((nx, nx))
-    # A = np.eye(nx) + np.triu(temp, 1) - np.triu(temp, 2)
-    # B = Q = R = Qf = np.eye(10)
-    # C = np.hstack([np.eye(8), np.zeros((8, 2))])
-    
-    # nx = 2
-    # nu = 1
-    # ny = 1
-    # dt = 0.1
-    # A = np.array([[1, dt],
-    #               [0, 1]])
-    # B = np.array([[0],
-    #               [dt]])
-    # C = np.array([[1,0]])
-    # Q = Qf = np.eye(nx)
-    # R = np.eye(nu)
     nx = 5
     nu = 3
     ny = 3
@@ -200,11 +178,11 @@ def run_experiment_for_horizon(T, num_sim, dist, noise_dist, use_lambda):
     # --- Disturbance Distribution ---
     if dist == "normal":
         w_max = None; w_min = None
-        mu_w = 0.02 * np.ones((nx, 1))
-        Sigma_w = 0.02 * np.eye(nx)
+        mu_w = 0.01 * np.ones((nx, 1))
+        Sigma_w = 0.01 * np.eye(nx)
         x0_max = None; x0_min = None
-        x0_mean = 0.02 * np.ones((nx, 1))
-        x0_cov = 0.02 * np.eye(nx)
+        x0_mean = 0.01 * np.ones((nx, 1))
+        x0_cov = 0.01 * np.eye(nx)
     elif dist == "quadratic":
         w_max = 1.0 * np.ones(nx)
         w_min = -2.0 * np.ones(nx)
@@ -217,8 +195,8 @@ def run_experiment_for_horizon(T, num_sim, dist, noise_dist, use_lambda):
     # --- Noise Distribution ---
     if noise_dist == "normal":
         v_max = None; v_min = None
-        M = 0.1 * np.eye(ny)
-        mu_v = 0.1 * np.ones((ny, 1))
+        M = 0.02 * np.eye(ny)
+        mu_v = 0.02 * np.ones((ny, 1))
     elif noise_dist == "quadratic":
         v_min = -1.0 * np.ones(ny)
         v_max = 2.0 * np.ones(ny)
@@ -263,8 +241,8 @@ def run_experiment_for_horizon(T, num_sim, dist, noise_dist, use_lambda):
     x0_mean_hat = x0_mean
     x0_cov_hat = x0_cov
     # --- Controller Parameters ---
-    fixed_theta_w = 0.5
-    fixed_theta_v = 0.1
+    fixed_theta_w = 0.2
+    fixed_theta_v = 0.2
     lambda_ = 30.0
     theta_x0 = 0.01
     system_data = (A, B, C, Q, Qf, R, M)
@@ -301,26 +279,47 @@ def run_experiment_for_horizon(T, num_sim, dist, noise_dist, use_lambda):
                             x0_mean, x0_cov, x0_max, x0_min, mu_w, Sigma_w, w_max, w_min,
                             v_max, v_min, mu_v, mu_v_hat, M_hat, x0_mean_hat, x0_cov_hat,
                             False, False)
+                            
+    # --- Instantiate Finite-horizon DRLQC (using tiled parameters) ---  # (DRLQC added)
+    tol = 1e-2
+    # Construct batch matrices for DRLQC:
+    W_hat = np.zeros((nx, nx, T+1))
+    V_hat = np.zeros((ny, ny, T+1))
+    for i in range(T):
+        W_hat[:,:,i] = Sigma_w_hat
+    for i in range(T+1):
+        V_hat[:,:,i] = M_hat
+    drlqc = DRLQC(fixed_theta_w, fixed_theta_v, theta_x0, T, dist, noise_dist,
+                  system_data, mu_w_hat_fh, W_hat, x0_mean, x0_cov, x0_max, x0_min,
+                  mu_w, Sigma_w, w_max, w_min, v_max, v_min, mu_v, mu_v_hat_fh,
+                  V_hat, x0_mean_hat, x0_cov_hat, tol)
+    
     # --- Compute the control policy (backward recursion) ---
     lqg_fh.backward()
     lqg_inf.backward()
     drce_fh.backward()
     drce_inf.backward()
+    # For DRLQC, first solve the SDP and then run backward pass  (DRLQC added)
+    drlqc.solve_sdp()
+    drlqc.backward()
     
     # --- Run forward simulations using the same nominal distribution ---
     lqg_fh_costs = []
     lqg_inf_costs = []
     drce_fh_costs = []
     drce_inf_costs = []
+    drlqc_costs = []  # (DRLQC added)
     for i in range(num_sim):
         out_lqg_fh = lqg_fh.forward()
         out_lqg_inf = lqg_inf.forward()
         out_drce_fh = drce_fh.forward()
         out_drce_inf = drce_inf.forward()
+        out_drlqc = drlqc.forward()  # (DRLQC added)
         lqg_fh_costs.append(out_lqg_fh['cost'][0])
         lqg_inf_costs.append(out_lqg_inf['cost'][0])
         drce_fh_costs.append(out_drce_fh['cost'][0])
         drce_inf_costs.append(out_drce_inf['cost'][0])
+        drlqc_costs.append(out_drlqc['cost'][0])  # (DRLQC added)
     avg_lqg_fh = np.mean(lqg_fh_costs)
     std_lqg_fh = np.std(lqg_fh_costs)
     avg_lqg_inf = np.mean(lqg_inf_costs)
@@ -329,17 +328,21 @@ def run_experiment_for_horizon(T, num_sim, dist, noise_dist, use_lambda):
     std_drce_fh = np.std(drce_fh_costs)
     avg_drce_inf = np.mean(drce_inf_costs)
     std_drce_inf = np.std(drce_inf_costs)
+    avg_drlqc = np.mean(drlqc_costs)  
+    std_drlqc = np.std(drlqc_costs)  
     return (avg_lqg_fh, std_lqg_fh, avg_lqg_inf, std_lqg_inf,
-            avg_drce_fh, std_drce_fh, avg_drce_inf, std_drce_inf)
+            avg_drce_fh, std_drce_fh, avg_drce_inf, std_drce_inf,
+            avg_drlqc, std_drlqc)  # (DRLQC added)
 
 def main(dist, noise_dist, num_sim, use_lambda_flag):
-    horizon_list = list(range(2, 51, 2))
-    num_experiments = 20  # Repeat the entire experiment 10 times for each T
+    horizon_list = list(range(2, 51, 5))
+    num_experiments = 10  # Repeat the entire experiment 10 times for each T
     summary = {"T": [],
                "LQG_finite": {"mean": [], "std": []},
                "LQG_infinite": {"mean": [], "std": []},
                "DRCE_finite": {"mean": [], "std": []},
-               "DRCE_infinite": {"mean": [], "std": []}}
+               "DRCE_infinite": {"mean": [], "std": []},
+               "DRLQC_finite": {"mean": [], "std": []}}
     
     for T in horizon_list:
         print(f"Running experiment for time horizon T = {T}")
@@ -348,16 +351,19 @@ def main(dist, noise_dist, num_sim, use_lambda_flag):
         lqg_inf_rep = []
         drce_fh_rep = []
         drce_inf_rep = []
+        drlqc_rep = []  
         # Repeat the entire experiment num_experiments times.
         for rep in range(num_experiments):
             # Fix the random seed for reproducibility.
             np.random.seed(2024 + rep)
             (avg_lqg_fh, std_lqg_fh, avg_lqg_inf, std_lqg_inf,
-             avg_drce_fh, std_drce_fh, avg_drce_inf, std_drce_inf) = run_experiment_for_horizon(T, num_sim, dist, noise_dist, use_lambda_flag)
+             avg_drce_fh, std_drce_fh, avg_drce_inf, std_drce_inf,
+             avg_drlqc, std_drlqc) = run_experiment_for_horizon(T, num_sim, dist, noise_dist, use_lambda_flag)
             lqg_fh_rep.append(avg_lqg_fh)
             lqg_inf_rep.append(avg_lqg_inf)
             drce_fh_rep.append(avg_drce_fh)
             drce_inf_rep.append(avg_drce_inf)
+            drlqc_rep.append(avg_drlqc)  # (DRLQC added)
         # Aggregate the results over the replications.
         final_avg_lqg_fh = np.mean(lqg_fh_rep)
         final_std_lqg_fh = np.std(lqg_fh_rep)
@@ -367,6 +373,8 @@ def main(dist, noise_dist, num_sim, use_lambda_flag):
         final_std_drce_fh = np.std(drce_fh_rep)
         final_avg_drce_inf = np.mean(drce_inf_rep)
         final_std_drce_inf = np.std(drce_inf_rep)
+        final_avg_drlqc = np.mean(drlqc_rep)   # (DRLQC added)
+        final_std_drlqc = np.std(drlqc_rep)     # (DRLQC added)
         
         summary["T"].append(T)
         summary["LQG_finite"]["mean"].append(final_avg_lqg_fh)
@@ -377,14 +385,16 @@ def main(dist, noise_dist, num_sim, use_lambda_flag):
         summary["DRCE_finite"]["std"].append(final_std_drce_fh)
         summary["DRCE_infinite"]["mean"].append(final_avg_drce_inf)
         summary["DRCE_infinite"]["std"].append(final_std_drce_inf)
+        summary["DRLQC_finite"]["mean"].append(final_avg_drlqc)   # (DRLQC added)
+        summary["DRLQC_finite"]["std"].append(final_std_drlqc)     # (DRLQC added)
     
     if use_lambda_flag:
-        save_folder = "./results/time_horizon_experiment_4_lambda/"
+        save_folder = "./results/time_horizon_experiment_5_lambda/"  # (folder updated to 5)
     else:
-        save_folder = "./results/time_horizon_experiment_4/"
+        save_folder = "./results/time_horizon_experiment_5/"           # (folder updated to 5)
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
-    save_data(os.path.join(save_folder, f"time_horizon_costs_exp4_{dist}_{noise_dist}.pkl"), summary)
+    save_data(os.path.join(save_folder, f"time_horizon_costs_exp5_{dist}_{noise_dist}.pkl"), summary)
     print("Time horizon experiment data generation completed!")
     print(summary)
 
