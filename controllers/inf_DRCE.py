@@ -81,7 +81,7 @@ class inf_DRCE:
     def optimize_penalty(self):
         # Find inf_penalty (infimum value of penalty coefficient satisfying Assumption 1)
         self.infimum_penalty = self.binarysearch_infimum_penalty_finite()
-        print("Infimum penalty:", self.infimum_penalty)
+        print("inf DRCE Infimum penalty:", self.infimum_penalty)
         
         # Optimize penalty
         print("Optimizing lambda . . . Please wait")
@@ -92,7 +92,7 @@ class inf_DRCE:
         # print("inf WDR-CE Optimal penalty (lambda_star) :", optimal_penalty[0], " when theta_w : ", self.theta_w, "\n\n")
         # return optimal_penalty
     
-        penalty_values = np.linspace(2* self.infimum_penalty, 1e2 * self.infimum_penalty, num=10)
+        penalty_values = np.linspace(3* self.infimum_penalty, 10 * self.infimum_penalty, num=10)
         
         # Uncomment below for parallel computation
         # objectives = Parallel(n_jobs=-1)(delayed(self.objective)(np.array([p])) for p in penalty_values)
@@ -291,15 +291,16 @@ class inf_DRCE:
         
         prob.solve(solver=cp.MOSEK)
         
-        if prob.status in ["infeasible", "unbounded"]:
-            print(prob.status, 'False in inf DRCE !!!!!!!!!!!!!')
+        # if prob.status in ["infeasible", "unbounded"]:
+        #     print(prob.status, 'False in inf DRCE !!!!!!!!!!!!!')
+        #     print("Current Lambda: ", Lambda_)
         
         sol = prob.variables()
         #['X', 'Sigma_wc', 'Y', 'X_pred', 'M_wc', 'Z']
         
-        self.S_xx_opt = sol[3].value
-        self.S_xy_opt = self.S_xx_opt @ self.C.T
-        self.S_yy_opt = self.C @ self.S_xx_opt @ self.C.T + sol[4].value
+        # self.S_xx_opt = sol[3].value
+        # self.S_xy_opt = self.S_xx_opt @ self.C.T
+        # self.S_yy_opt = self.C @ self.S_xx_opt @ self.C.T + sol[4].value
         M_wc_opt = sol[4].value 
         #S_opt = S.value
         Sigma_wc_opt = sol[1].value
@@ -420,6 +421,10 @@ class inf_DRCE:
                 self.P_list[t+1:,:,:] = P
                 self.S_list[t+1:,:,:] = S
                 P_post, sigma_wc, M_wc, z_tilde_, status = self.KF_riccati(self.x0_cov_hat, self.P_ss, self.S_ss, self.lambda_)
+                
+                #
+                
+                #
                 self.X_pred = P_post
                 self.sigma_wc = sigma_wc
                 self.M_wc = M_wc

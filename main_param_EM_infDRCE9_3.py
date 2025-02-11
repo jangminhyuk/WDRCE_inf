@@ -147,8 +147,18 @@ def main(dist, noise_dist, num_sim, num_samples, num_noise_samples, T, infinite)
     # B = Q = R = Qf = np.eye(10)
     # C = np.hstack([np.eye(9), np.zeros((9, 1))])
 
+    # nx = 2
+    # nu = 1
+    # ny = 1
+    # dt = 0.1
+    # A = np.array([[1, dt],
+    #               [0, 1]])
+    # B = np.array([[0],
+    #               [dt]])
+    # C = np.array([[1,0]])
+    # Q = Qf = np.eye(nx)
+    # R = np.eye(nu)
 
-    # Example 3: 8-state mixed banded system with increased nu and ny
     # Example 1: AC1 (COMPlib companion–form system)
     nx = 5
     nu = 3
@@ -189,7 +199,7 @@ def main(dist, noise_dist, num_sim, num_samples, num_noise_samples, T, infinite)
     # lambda_list = [12, 15, 20, 25, 30, 35, 40]
     lambda_list = [30, 40, 50, 60]
     theta_w_local = 1.0
-    theta_x0 = 0.1
+    theta_x0 = 0.01
     use_lambda = True
     use_optimal_lambda = False
     if use_lambda:
