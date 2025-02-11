@@ -87,8 +87,8 @@ def plot_experiment_lambda3(dist, noise_dist):
             # For inf_LQG, the cost is independent of lambda and theta_v.
             # Define the parameter ranges based on the disturbance type.
             if dist == "normal":
-                lambda_list = np.array([30, 40, 50, 60])
-                theta_v_list = np.array([0.01, 0.05, 0.1])
+                lambda_list = np.array([17, 20, 30, 40, 50, 60])
+                theta_v_list = np.array([0.1, 0.2, 0.5])
             else:
                 lambda_list = np.array([15, 20, 25, 30, 35, 40])
                 theta_v_list = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])

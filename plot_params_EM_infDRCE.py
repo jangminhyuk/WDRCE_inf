@@ -89,7 +89,7 @@ def plot_experiment_lambda(dist, noise_dist):
             # LQG cost is independent of the ambiguity parameters.
             # We replicate the LQG cost for every combination.
             if dist == "normal":
-                lambda_list = [15, 20, 25, 30, 35, 40]
+                lambda_list = [20, 25, 30, 35, 40]
                 theta_v_list = [0.1, 0.5, 1.0, 2.0, 3.0, 4.0]
             else:
                 lambda_list = [15, 20, 25, 30, 35, 40]

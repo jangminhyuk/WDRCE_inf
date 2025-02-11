@@ -139,55 +139,56 @@ def main(dist, noise_dist, num_sim, num_samples, num_noise_samples, T, infinite)
     output_J_inf_DRCE_std = []
     
     # ------- System Initialization -------
-    # nx = 10  # state dimension
-    # nu = 10  # control input dimension
-    # ny = 9   # output dimension
-    # temp = np.ones((nx, nx))
-    # A = np.eye(nx) + np.triu(temp, 1) - np.triu(temp, 2)
-    # B = Q = R = Qf = np.eye(10)
-    # C = np.hstack([np.eye(9), np.zeros((9, 1))])
+    nx = 10  # state dimension
+    nu = 10  # control input dimension
+    ny = 10   # output dimension
+    temp = np.ones((nx, nx))
+    A = np.eye(nx) + np.triu(temp, 1) - np.triu(temp, 2)
+    B = Q = R = Qf = np.eye(10)
+    C = np.eye(10)
+    #C = np.hstack([np.eye(9), np.zeros((9, 1))])
 
+    
 
-    # Example 3: 8-state mixed banded system with increased nu and ny
     # Example 1: AC1 (COMPlib companion–form system)
-    nx = 5
-    nu = 3
-    ny = 3
+    # nx = 5
+    # nu = 3
+    # ny = 3
 
-    A = np.array([
-        [0,       0,      1.132,     0,      -1],
-        [0,  -0.0538,   -0.1712,     0,   0.0705],
-        [0,       0,         0,     1,       0],
-        [0,   0.0485,         0, -0.8556, -1.013],
-        [0,  -0.2909,         0,  1.0532, -0.6859]
-    ])
+    # A = np.array([
+    #     [0,       0,      1.132,     0,      -1],
+    #     [0,  -0.0538,   -0.1712,     0,   0.0705],
+    #     [0,       0,         0,     1,       0],
+    #     [0,   0.0485,         0, -0.8556, -1.013],
+    #     [0,  -0.2909,         0,  1.0532, -0.6859]
+    # ])
 
-    B = np.array([
-        [0,      0,      0],
-        [-0.12,  1,      0],
-        [0,      0,      0],
-        [4.419,  0, -1.665],
-        [1.575,  0, -0.0732]
-    ])
+    # B = np.array([
+    #     [0,      0,      0],
+    #     [-0.12,  1,      0],
+    #     [0,      0,      0],
+    #     [4.419,  0, -1.665],
+    #     [1.575,  0, -0.0732]
+    # ])
 
-    C = np.array([
-        [1, 0, 0, 0, 0],
-        [0, 1, 0, 0, 0],
-        [0, 0, 1, 0, 0]
-    ])
+    # C = np.array([
+    #     [1, 0, 0, 0, 0],
+    #     [0, 1, 0, 0, 0],
+    #     [0, 0, 1, 0, 0]
+    # ])
 
-    Q  = Qf = np.eye(nx)
-    R  = np.eye(nu)
+    # Q  = Qf = np.eye(nx)
+    # R  = np.eye(nu)
 
     # ----------------------------
     if dist == 'normal':
-        theta_v_list = [0.01, 0.05, 0.1]
+        theta_v_list = [0.1, 0.2, 0.5]
         theta_w_list = [0.1]
     else:
         theta_v_list = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         theta_w_list = [0.1, 0.2, 0.5, 1.0, 1.5]
     # lambda_list = [12, 15, 20, 25, 30, 35, 40]
-    lambda_list = [30, 40, 50, 60]
+    lambda_list = [20, 30, 40, 50, 60]
     theta_w_local = 1.0
     theta_x0 = 0.1
     use_lambda = True
@@ -209,12 +210,12 @@ def main(dist, noise_dist, num_sim, num_samples, num_noise_samples, T, infinite)
     if dist == "normal":
         w_max = None
         w_min = None
-        mu_w = 0.05 * np.ones((nx, 1))
-        Sigma_w = 0.05 * np.eye(nx)
+        mu_w = 0.01 * np.ones((nx, 1))
+        Sigma_w = 0.01 * np.eye(nx)
         x0_max = None
         x0_min = None
-        x0_mean = 0.05 * np.ones((nx, 1))
-        x0_cov = 0.05 * np.eye(nx)
+        x0_mean = 0.01 * np.ones((nx, 1))
+        x0_cov = 0.01 * np.eye(nx)
     elif dist == "quadratic":
         w_max = 0.3 * np.ones(nx)
         w_min = -0.6 * np.ones(nx)
@@ -228,7 +229,7 @@ def main(dist, noise_dist, num_sim, num_samples, num_noise_samples, T, infinite)
     if noise_dist == "normal":
         v_max = None
         v_min = None
-        M = 0.1 * np.eye(ny)
+        M = 0.02 * np.eye(ny)
         mu_v = 0.02 * np.ones((ny, 1))
     elif noise_dist == "quadratic":
         v_min = -0.5 * np.ones(ny)
@@ -238,7 +239,7 @@ def main(dist, noise_dist, num_sim, num_samples, num_noise_samples, T, infinite)
     
     print(f'Real data:\n mu_w: {mu_w},\n mu_v: {mu_v},\n Sigma_w: {Sigma_w},\n Sigma_v: {M}')
     
-    N = 50
+    N = 10
     # (We generate data here only to check dimensions.)
     x_all, y_all = generate_data(N, nx, ny, nu, A, B, C, mu_w, Sigma_w, mu_v, M,
                                   x0_mean, x0_cov, x0_max, x0_min, w_max, w_min, v_max, v_min, dist)

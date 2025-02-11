@@ -140,8 +140,7 @@ def generate_data(T, nx, ny, nu, A, B, C, mu_w, Sigma_w, mu_v, M,
 #    - Infinite–horizon DRCE (using non-tiled parameters)
 # 3. Run num_sim forward simulations and record the cost.
 def run_experiment_for_horizon(T, num_sim, dist, noise_dist, use_lambda):
-    fixed_theta_w = 1.0
-    fixed_theta_v = 5.0
+    
     # --- System Initialization ---
     # nx = 10 #state dimension
     # nu = 10 #control input dimension
@@ -158,25 +157,54 @@ def run_experiment_for_horizon(T, num_sim, dist, noise_dist, use_lambda):
     # B = Q = R = Qf = np.eye(10)
     # C = np.hstack([np.eye(8), np.zeros((8, 2))])
     
-    nx = 2
-    nu = 1
-    ny = 1
-    dt = 0.1
-    A = np.array([[1, dt],
-                  [0, 1]])
-    B = np.array([[0],
-                  [dt]])
-    C = np.array([[1,0]])
-    Q = Qf = np.eye(nx)
-    R = np.eye(nu)
+    # nx = 2
+    # nu = 1
+    # ny = 1
+    # dt = 0.1
+    # A = np.array([[1, dt],
+    #               [0, 1]])
+    # B = np.array([[0],
+    #               [dt]])
+    # C = np.array([[1,0]])
+    # Q = Qf = np.eye(nx)
+    # R = np.eye(nu)
+    nx = 5
+    nu = 3
+    ny = 3
+
+    A = np.array([
+        [0,       0,      1.132,     0,      -1],
+        [0,  -0.0538,   -0.1712,     0,   0.0705],
+        [0,       0,         0,     1,       0],
+        [0,   0.0485,         0, -0.8556, -1.013],
+        [0,  -0.2909,         0,  1.0532, -0.6859]
+    ])
+
+    B = np.array([
+        [0,      0,      0],
+        [-0.12,  1,      0],
+        [0,      0,      0],
+        [4.419,  0, -1.665],
+        [1.575,  0, -0.0732]
+    ])
+
+    C = np.array([
+        [1, 0, 0, 0, 0],
+        [0, 1, 0, 0, 0],
+        [0, 0, 1, 0, 0]
+    ])
+
+    Q  = Qf = np.eye(nx)
+    R  = np.eye(nu)
+    
     # --- Disturbance Distribution ---
     if dist == "normal":
         w_max = None; w_min = None
-        mu_w = 0.05 * np.ones((nx, 1))
-        Sigma_w = 0.1 * np.eye(nx)
+        mu_w = 0.02 * np.ones((nx, 1))
+        Sigma_w = 0.02 * np.eye(nx)
         x0_max = None; x0_min = None
-        x0_mean = 0.05 * np.ones((nx, 1))
-        x0_cov = 0.05 * np.eye(nx)
+        x0_mean = 0.02 * np.ones((nx, 1))
+        x0_cov = 0.02 * np.eye(nx)
     elif dist == "quadratic":
         w_max = 1.0 * np.ones(nx)
         w_min = -2.0 * np.ones(nx)
@@ -189,15 +217,15 @@ def run_experiment_for_horizon(T, num_sim, dist, noise_dist, use_lambda):
     # --- Noise Distribution ---
     if noise_dist == "normal":
         v_max = None; v_min = None
-        M = 0.1 * np.eye(ny)
-        mu_v = 0.05 * np.ones((ny, 1))
+        M = 0.02 * np.eye(ny)
+        mu_v = 0.02 * np.ones((ny, 1))
     elif noise_dist == "quadratic":
         v_min = -1.0 * np.ones(ny)
         v_max = 2.0 * np.ones(ny)
         mu_v = (0.5*(v_max+v_min))[..., np.newaxis]
         M = 3.0/20.0 * np.diag((v_max-v_min)**2)
     # --- Generate Data ---
-    N = 50
+    N = 10
     x_all, y_all = generate_data(N, nx, ny, nu, A, B, C,
                                   mu_w, Sigma_w, mu_v, M,
                                   x0_mean, x0_cov, x0_max, x0_min,
@@ -235,8 +263,10 @@ def run_experiment_for_horizon(T, num_sim, dist, noise_dist, use_lambda):
     x0_mean_hat = x0_mean
     x0_cov_hat = x0_cov
     # --- Controller Parameters ---
-    lambda_ = 2000.0
-    theta_x0 = 0.5
+    lambda_ = 40.0
+    theta_x0 = 0.05
+    fixed_theta_w = 1.0
+    fixed_theta_v = 0.5
     system_data = (A, B, C, Q, Qf, R, M)
     # --- Instantiate Controllers ---
     # Finite-horizon LQG (using tiled parameters)
@@ -303,7 +333,7 @@ def run_experiment_for_horizon(T, num_sim, dist, noise_dist, use_lambda):
             avg_drce_fh, std_drce_fh, avg_drce_inf, std_drce_inf)
 
 def main(dist, noise_dist, num_sim, use_lambda_flag):
-    horizon_list = list(range(2, 51, 2))
+    horizon_list = list(range(2, 101, 2))
     num_experiments = 10  # Repeat the entire experiment 10 times for each T
     summary = {"T": [],
                "LQG_finite": {"mean": [], "std": []},
