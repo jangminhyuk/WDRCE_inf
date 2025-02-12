@@ -178,8 +178,8 @@ def run_experiment_for_horizon(T, num_sim, dist, noise_dist, use_lambda):
     # --- Disturbance Distribution ---
     if dist == "normal":
         w_max = None; w_min = None
-        mu_w = 0.01 * np.ones((nx, 1))
-        Sigma_w = 0.01 * np.eye(nx)
+        mu_w = 0.02 * np.ones((nx, 1))
+        Sigma_w = 0.02 * np.eye(nx)
         x0_max = None; x0_min = None
         x0_mean = 0.01 * np.ones((nx, 1))
         x0_cov = 0.01 * np.eye(nx)
@@ -202,8 +202,14 @@ def run_experiment_for_horizon(T, num_sim, dist, noise_dist, use_lambda):
         v_max = 2.0 * np.ones(ny)
         mu_v = (0.5*(v_max+v_min))[..., np.newaxis]
         M = 3.0/20.0 * np.diag((v_max-v_min)**2)
+    # --- Controller Parameters ---
+    fixed_theta_w = 0.1
+    fixed_theta_v = 0.2
+    lambda_ = 30.0
+    theta_x0 = 0.01
+    
     # --- Generate Data ---
-    N = 20
+    N = 10
     x_all, y_all = generate_data(N, nx, ny, nu, A, B, C,
                                   mu_w, Sigma_w, mu_v, M,
                                   x0_mean, x0_cov, x0_max, x0_min,
@@ -240,11 +246,7 @@ def run_experiment_for_horizon(T, num_sim, dist, noise_dist, use_lambda):
     M_hat_fh = np.tile(M_hat, (T+1, 1, 1))
     x0_mean_hat = x0_mean
     x0_cov_hat = x0_cov
-    # --- Controller Parameters ---
-    fixed_theta_w = 0.2
-    fixed_theta_v = 0.2
-    lambda_ = 30.0
-    theta_x0 = 0.01
+    
     system_data = (A, B, C, Q, Qf, R, M)
     # --- Instantiate Controllers ---
     # Finite-horizon LQG (using tiled parameters)
@@ -335,7 +337,7 @@ def run_experiment_for_horizon(T, num_sim, dist, noise_dist, use_lambda):
             avg_drlqc, std_drlqc)  # (DRLQC added)
 
 def main(dist, noise_dist, num_sim, use_lambda_flag):
-    horizon_list = list(range(2, 51, 5))
+    horizon_list = list(range(5, 31, 5))
     num_experiments = 10  # Repeat the entire experiment 10 times for each T
     summary = {"T": [],
                "LQG_finite": {"mean": [], "std": []},

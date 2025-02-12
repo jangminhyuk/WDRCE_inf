@@ -67,7 +67,6 @@ class DRCE:
         else:
             self.lambda_ = self.optimize_penalty() #optimize penalty parameter for theta
             
-        
         self.P = np.zeros((self.T+1, self.nx, self.nx))
         self.S = np.zeros((self.T+1, self.nx, self.nx))
         self.r = np.zeros((self.T+1, self.nx, 1))
@@ -84,28 +83,30 @@ class DRCE:
         self.infimum_penalty = self.binarysearch_infimum_penalty_finite()
         print("Infimum penalty:", self.infimum_penalty)
         print("Optimizing lambda . . . Please wait")
-        penalty_values = np.linspace(3* self.infimum_penalty, 10* self.infimum_penalty, num=10)
+        # penalty_values = np.linspace(3* self.infimum_penalty, 10* self.infimum_penalty, num=10)
         
-        # Uncomment below for parallel computation
-        # objectives = Parallel(n_jobs=-1)(delayed(self.objective)(np.array([p])) for p in penalty_values)
+        # # Uncomment below for parallel computation
+        # # objectives = Parallel(n_jobs=-1)(delayed(self.objective)(np.array([p])) for p in penalty_values)
         
-        # ----
-        objectives = []
+        # # ----
+        # objectives = []
 
-        # Compute objectives sequentially
-        for p in penalty_values:
-            obj = self.objective(np.array([p]))
-            objectives.append(obj)
-        # ----
+        # # Compute objectives sequentially
+        # for p in penalty_values:
+        #     obj = self.objective(np.array([p]))
+        #     objectives.append(obj)
+        # # ----
         
-        objectives = np.array(objectives)
-        optimal_penalty = penalty_values[np.argmin(objectives)]
-        print("DRCE Optimal penalty (lambda_star):", optimal_penalty, "theta_w : ", self.theta_w, " theta_v : ", self.theta_v)
-        return np.array([optimal_penalty])
+        # objectives = np.array(objectives)
+        # optimal_penalty = penalty_values[np.argmin(objectives)]
+        # print("DRCE Optimal penalty (lambda_star):", optimal_penalty, "theta_w : ", self.theta_w, " theta_v : ", self.theta_v)
+        # return np.array([optimal_penalty])
     
-    
+        output = minimize(self.objective, x0=np.array([4*self.infimum_penalty]), method='L-BFGS-B', options={'disp': False, 'maxiter': 1000,'ftol': 1e-6,'gtol': 1e-6, 'maxfun':1000})
+        optimal_penalty = output.x
+        print("DRCE Optimal penalty (lambda_star) :", optimal_penalty[0], " when theta_w : ", self.theta_w, "\n\n")
+        return optimal_penalty
         # output = minimize(self.objective, x0=np.array([2*self.infimum_penalty]), method='L-BFGS-B', options={'disp': False, 'maxiter': 100,'ftol': 1e-6,'gtol': 1e-6, 'maxfun':100})
-        # penalty_values = np.linspace(2* self.infimum_penalty, 1e2 * self.infimum_penalty, num=50)
         # optimal_penalty = output.x
         # return optimal_penalty
     
@@ -118,10 +119,9 @@ class DRCE:
         r = np.zeros((self.T+1, self.nx,1))
         z = np.zeros((self.T+1, 1))
         z_tilde = np.zeros((self.T+1, 1))
-
+        
         if np.max(np.linalg.eigvals(P)) > penalty:
-        #or np.max(np.linalg.eigvals(P + S)) > penalty:
-                return np.inf
+            return np.inf
         if penalty < 0:
             return np.inf
         
@@ -141,10 +141,12 @@ class DRCE:
         S_yy = np.zeros((self.T+1, self.ny, self.ny))
         sigma_wc = np.zeros((self.T, self.nx, self.nx))
           
-        x_cov[0], S_xx[0], S_xy[0], S_yy[0], _= self.DR_kalman_filter_cov_initial(self.M_hat[0], self.x0_cov_hat, S[0])
+        x_cov[0], S_xx[0], S_xy[0], S_yy[0], _, status= self.DR_kalman_filter_cov_initial(self.M_hat[0], self.x0_cov_hat, S[0])
         for t in range(0, self.T-1):
-            x_cov[t+1], S_xx[t+1], S_xy[t+1], S_yy[t+1], sigma_wc[t], z_tilde[t] = self.DR_kalman_filter_cov(P[t+1], S[t+1], self.M_hat[t+1], x_cov[t], self.Sigma_hat[t], penalty)
-
+            x_cov[t+1], S_xx[t+1], S_xy[t+1], S_yy[t+1], sigma_wc[t], z_tilde[t], status = self.DR_kalman_filter_cov(P[t+1], S[t+1], self.M_hat[t+1], x_cov[t], self.Sigma_hat[t], penalty)
+            if status in ["infeasible", "unbounded", "unknown"]:
+                #print(status)
+                return np.inf
         y = self.get_obs(self.x0_init, self.true_v_init)
         x0_mean = self.DR_kalman_filter(self.v_mean_hat[0], self.M_hat[0], self.x0_mean_hat, y, S_xx[0], S_xy[0], S_yy[0]) #initial state estimation
         obj_val = penalty*self.T*self.theta_w**2 + (self.x0_mean_hat.T @ P[0] @ self.x0_mean_hat)[0][0] + 2*(r[0].T @ self.x0_mean_hat)[0][0] + z[0][0] + np.trace((P[0]+S[0]) @self.x0_cov_hat) + z_tilde.sum()
@@ -170,13 +172,14 @@ class DRCE:
         z = np.zeros((1,1))
         if penalty < 0:
             return False
-        if np.max(np.linalg.eigvals(P)) >= penalty:
+        
+        if np.max(np.linalg.eigvals(P)) > penalty - 1e-3:
         #or np.max(np.linalg.eigvals(P + S)) >= penalty:
                 return False
         for t in range(self.T-1, -1, -1):
             Phi = self.B @ np.linalg.inv(self.R) @ self.B.T + 1/penalty * np.eye(self.nx)
             P, S, r, z, K, L, H, h, g = self.riccati(Phi, P, S, r, z, self.Sigma_hat[t], self.mu_hat[t], penalty, t)
-            if np.max(np.linalg.eigvals(P)) >= penalty:
+            if np.max(np.linalg.eigvals(P)) > penalty - 1e-3:
                 return False
         return True
 
@@ -262,6 +265,8 @@ class DRCE:
     def solve_DR_sdp(self, prob, P_t1, S_t1, M, X_cov, Sigma_hat, theta, Lambda_):
         #construct problem
         params = prob.parameters()
+        # for i, param in enumerate(params):
+        #     print(f"params[{i}]: {param.name()}")
         params[0].value = S_t1 # S[t+1]
         params[1].value = P_t1 # P[t+1]
         params[2].value = Lambda_
@@ -278,15 +283,18 @@ class DRCE:
         #     print(prob.status, 'False in DRCE SDP !!!!!!!!')
         
         sol = prob.variables()
+        # for i, var in enumerate(sol):
+        #     print(f"var[{i}]: {var.name()}")
         #['V', 'Sigma_wc', 'Y', 'X_pred', 'M_test', 'Z']
         
         S_xx_opt = sol[3].value
-        S_xy_opt = S_xx_opt @ self.C.T
-        S_yy_opt = self.C @ S_xx_opt @ self.C.T + sol[4].value
+        #S_xy_opt = S_xx_opt @ self.C.T
+        #S_yy_opt = self.C @ S_xx_opt @ self.C.T + sol[4].value
         
+        M_wc_opt = sol[4].value
         Sigma_wc_opt = sol[1].value
         cost = prob.value
-        return  S_xx_opt, S_xy_opt, S_yy_opt, Sigma_wc_opt, cost
+        return  S_xx_opt,  Sigma_wc_opt, M_wc_opt, cost, prob.status
     
     
     def create_DR_sdp_initial(self):
@@ -344,15 +352,15 @@ class DRCE:
         
         prob.solve(solver=cp.MOSEK)
         
-        if prob.status in ["infeasible", "unbounded"]:
-            print(prob.status, 'False in DRCE initial!!!!!!!!!!!!!')
+        # if prob.status in ["infeasible", "unbounded"]:
+        #     print(prob.status, 'False in DRCE initial!!!!!!!!!!!!!')
         
         sol = prob.variables()
         S_xx_opt = sol[0].value
         S_xy_opt = S_xx_opt @ self.C.T
         S_yy_opt = self.C @ S_xx_opt @ self.C.T + sol[2].value
         cost = prob.value
-        return  S_xx_opt, S_xy_opt, S_yy_opt, cost
+        return  S_xx_opt, S_xy_opt, S_yy_opt, cost, prob.status
     
     #DR Kalman FILTER !
     def DR_kalman_filter(self, v_mean_hat, M_hat, x, y, S_xx, S_xy, S_yy, mu_w=None, u = None):
@@ -372,18 +380,28 @@ class DRCE:
     def DR_kalman_filter_cov(self, P, S, M_hat, X_cov, Sigma_hat, Lambda):
         #Performs state estimation based on the current state estimate, control input and new observation
         theta = self.theta_v
-        S_xx, S_xy, S_yy, Sigma_wc, cost = self.solve_DR_sdp(self.DR_sdp, P, S, M_hat, X_cov, Sigma_hat, theta, Lambda)
+        S_xx, Sigma_wc, M_wc, cost, status = self.solve_DR_sdp(self.DR_sdp, P, S, M_hat, X_cov, Sigma_hat, theta, Lambda)
         
+        if status in ["infeasible", "unbounded"]:
+            #print(status, 'False in DRCE cov!!!!!!!!!')
+            return None, None, None, None, None, None, status
+            
+        S_yy = self.C @ S_xx @ self.C.T + M_wc
+        S_xy = S_xx @ self.C.T
         X_cov_new = S_xx - S_xy @ np.linalg.inv(S_yy) @ S_xy.T
         
-        return X_cov_new, S_xx, S_xy, S_yy, Sigma_wc, cost
+        return X_cov_new, S_xx, S_xy, S_yy, Sigma_wc, cost, status
     
     def DR_kalman_filter_cov_initial(self, M_hat, X_cov, S_0): #DRKF !!
         #Performs state estimation based on the current state estimate, control input and new observation
-        S_xx, S_xy, S_yy, cost = self.solve_DR_sdp_initial(self.DR_sdp_init, M_hat, X_cov, S_0)
+        S_xx, S_xy, S_yy, cost, status = self.solve_DR_sdp_initial(self.DR_sdp_init, M_hat, X_cov, S_0)
+        
+        if status in ["infeasible", "unbounded"]:
+            #print(status, 'False in DRCE cov init!!!!!!!!!')
+            return None, None, None, None, None, None, status
         
         X_cov_new = S_xx - S_xy @ np.linalg.inv(S_yy) @ S_xy.T
-        return X_cov_new, S_xx, S_xy, S_yy, cost
+        return X_cov_new, S_xx, S_xy, S_yy, cost, status
     
     def riccati(self, Phi, P, S, r, z, Sigma_hat, mu_hat, lambda_, t):
         #Riccati equation corresponding to the Theorem 1
@@ -430,11 +448,11 @@ class DRCE:
         self.S_xy = np.zeros((self.T+1, self.nx, self.ny))
         self.S_yy = np.zeros((self.T+1, self.ny, self.ny))
         self.sigma_wc = np.zeros((self.T, self.nx, self.nx))
-        self.x_cov[0], self.S_xx[0], self.S_xy[0], self.S_yy[0], _= self.DR_kalman_filter_cov_initial(self.M_hat[0], self.x0_cov_hat, self.S[0])
+        self.x_cov[0], self.S_xx[0], self.S_xy[0], self.S_yy[0], _, status= self.DR_kalman_filter_cov_initial(self.M_hat[0], self.x0_cov_hat, self.S[0])
         
         for t in range(self.T):
             print("DRCE Offline step : ",t,"/",self.T)
-            self.x_cov[t+1], self.S_xx[t+1], self.S_xy[t+1], self.S_yy[t+1], self.sigma_wc[t], _ = self.DR_kalman_filter_cov(self.P[t+1], self.S[t+1], self.M_hat[t+1], self.x_cov[t], self.Sigma_hat[t], self.lambda_)
+            self.x_cov[t+1], self.S_xx[t+1], self.S_xy[t+1], self.S_yy[t+1], self.sigma_wc[t], _, status= self.DR_kalman_filter_cov(self.P[t+1], self.S[t+1], self.M_hat[t+1], self.x_cov[t], self.Sigma_hat[t], self.lambda_)
         
         offline_end = time.time()
         self.offline_time = offline_end - offline_start

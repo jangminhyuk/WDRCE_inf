@@ -85,34 +85,37 @@ class inf_DRCE:
         
         # Optimize penalty
         print("Optimizing lambda . . . Please wait")
-        
+        output = minimize(self.objective, x0=np.array([4*self.infimum_penalty]), method='L-BFGS-B', options={'disp': False, 'maxiter': 1000,'ftol': 1e-6,'gtol': 1e-6, 'maxfun':1000})
+        optimal_penalty = output.x
+        print("infDRCE Optimal penalty (lambda_star) :", optimal_penalty[0], " when theta_w : ", self.theta_w, "\n\n")
+        return optimal_penalty
         
         # output = minimize(self.objective, x0=np.array([4*self.infimum_penalty]), method='L-BFGS-B', options={'disp': False, 'maxiter': 100,'ftol': 1e-6,'gtol': 1e-6, 'maxfun':100})
         # optimal_penalty = output.x
         # print("inf WDR-CE Optimal penalty (lambda_star) :", optimal_penalty[0], " when theta_w : ", self.theta_w, "\n\n")
         # return optimal_penalty
-    
-        penalty_values = np.linspace(3* self.infimum_penalty, 10 * self.infimum_penalty, num=10)
-        
-        # Uncomment below for parallel computation
-        # objectives = Parallel(n_jobs=-1)(delayed(self.objective)(np.array([p])) for p in penalty_values)
-        
-        # ----
-        objectives = []
 
-        # Compute objectives sequentially
-        for p in penalty_values:
-            obj = self.objective(np.array([p]))
-            objectives.append(obj)
-        # ----
+        #### BELOW 
+        # penalty_values = np.linspace(3* self.infimum_penalty, 10 * self.infimum_penalty, num=10)
         
-        objectives = np.array(objectives)
-        optimal_penalty = penalty_values[np.argmin(objectives)]
-        #optimal_penalty = output.x
-        print("infDRCE Optimal penalty (lambda_star):", optimal_penalty, "theta_w : ", self.theta_w, " theta_v : ", self.theta_v)
-        #print(optimal_penalty)
-        return np.array([optimal_penalty])
-        # #return optimal_penalty
+        # # Uncomment below for parallel computation
+        # # objectives = Parallel(n_jobs=-1)(delayed(self.objective)(np.array([p])) for p in penalty_values)
+        
+        # # ----
+        # objectives = []
+
+        # # Compute objectives sequentially
+        # for p in penalty_values:
+        #     obj = self.objective(np.array([p]))
+        #     objectives.append(obj)
+        # # ----
+        
+        # objectives = np.array(objectives)
+        # optimal_penalty = penalty_values[np.argmin(objectives)]
+        # #optimal_penalty = output.x
+        # print("infDRCE Optimal penalty (lambda_star):", optimal_penalty, "theta_w : ", self.theta_w, " theta_v : ", self.theta_v)
+        # return np.array([optimal_penalty])
+    
     def objective(self, penalty):
         #Compute the upper bound in Proposition 1
         P = np.zeros((self.nx,self.nx))        
