@@ -82,7 +82,7 @@ def run_dr_kf_once(n=10, m=10, steps=50, theta=0.5, N_samples=20, dist_type="nor
     B = np.linalg.cholesky(W)
     CC = control.ctrb(A, B)
     stab_ok = (np.linalg.matrix_rank(CC) == n)
-    Sigma_x_minus = np.eye(n)
+    Sigma_x_minus = 0.01*np.eye(n)
     posterior_list = []
     for _ in range(steps):
         Sigma_v_sol, Sigma_x_sol = dr_kf_solve_measurement_update(Sigma_x_minus, C, Sigma_v_nom, theta)

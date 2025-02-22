@@ -30,7 +30,7 @@ def run_standard_kf_once(n=10, m=10, steps=50):
     stab_ok = (np.linalg.matrix_rank(CC) == n)
     
     # Initialize prior covariance
-    Sigma_x_minus = 10*np.eye(n)
+    Sigma_x_minus = 0.01*np.eye(n)
     posteriors = []
     
     for _ in range(steps):
