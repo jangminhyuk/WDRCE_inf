@@ -7,13 +7,14 @@ from scipy.optimize import minimize
 import cvxpy as cp
 import scipy
 from joblib import Parallel, delayed
+from scipy.linalg import cholesky, solve_triangular
 
 # Distributionally Robust regret-optimal with measurement feedback (DR-RO-MF)
 class DR_RO_MF:
-    def __init__(self, theta, T, dist, noise_dist, system_data, mu_hat, Sigma_hat, x0_mean, x0_cov, x0_max, x0_min, mu_w, Sigma_w, w_max, w_min, v_max, v_min, mu_v, v_mean_hat, M_hat, x0_mean_hat, x0_cov_hat):
+    def __init__(self, theta, N, dist, noise_dist, system_data, mu_hat, Sigma_hat, x0_mean, x0_cov, x0_max, x0_min, mu_w, Sigma_w, w_max, w_min, v_max, v_min, mu_v, v_mean_hat, M_hat, x0_mean_hat, x0_cov_hat):
         self.dist = dist
         self.noise_dist = noise_dist
-        self.T = T
+        self.N = N
         self.A, self.B, self.C, self.Q, self.Qf, self.R, self.M = system_data
         self.v_mean_hat = v_mean_hat 
         self.M_hat = M_hat 
@@ -54,9 +55,49 @@ class DR_RO_MF:
         elif self.noise_dist=="quadratic":
             self.true_v_init = self.quadratic(self.v_max, self.v_min) #observation noise
         
-        self.theta_w = theta # size of the ambiguity set
+        self.radius = theta # size of the ambiguity set
         
-        self.DR_sdp = self.create_DR_sdp()
+        self.F, self.G, self.J, self.L = self.compute_operator_matrices()
+        self.S = np.eye(N*self.nu) + self.F @ self.F.T
+        self.T = np.eye(N*self.nu) + self.F.T @ self.F
+        self.V = np.eye(N*self.nx) + self.L.T @ self.L
+        self.U = np.eye(N*self.nx) + self.L @ self.L.T
+        self.E0 = - np.linalg.inv(self.T) @ self.F.T @ self.G @ self.L.T @ np.linalg.inv(self.U)
+        
+        
+        # For S and U: factorize as S = S^{1/2}(S^{1/2})^T and U = U^{1/2}(U^{1/2})^T.
+        S_half = cholesky(self.S, lower=True)  # S^{1/2} (lower triangular)
+        self.U_half = cholesky(self.U, lower=True)  # U^{1/2} (lower triangular)
+
+        # For T and V: factorize as T = (T^{1/2})^T T^{1/2} and V = (V^{1/2})^T V^{1/2}.
+        # Here we set T^{1/2} and V^{1/2} to be lower triangular.
+        self.T_half = cholesky(self.T, lower=True)  # T^{1/2} (lower triangular)
+        self.V_half = cholesky(self.V, lower=True)  # V^{1/2} (lower triangular)
+        # Then, by notation, T^{\top/2} = T_half.T and V^{\top/2} = V_half.T.
+
+        # Compute the inverses of the square-root factors.
+        # For T^{-1/2} and U^{-1/2} (and similarly for V), we compute the inverse of the Cholesky factor.
+        T_half_inv = solve_triangular(self.T_half, np.eye(self.T_half.shape[0]), lower=True)
+        U_half_inv = solve_triangular(self.U_half, np.eye(self.U_half.shape[0]), lower=True)
+        V_half_inv = solve_triangular(self.V_half, np.eye(self.V_half.shape[0]), lower=True)
+        # Then, (T^{-1/2})^T = (T_half_inv).T, etc.
+
+        # Now implement the equations.
+
+        # Equation for W:
+        # W = -(T^{-1/2})^T F^T G L^T (U^{-1/2})^T
+        self.W = - (T_half_inv.T) @ self.F.T @ self.G @ self.L.T @ (U_half_inv.T)
+
+        # Equation for P:
+        # P = (V^{-1/2})^T G^T F T^{-1/2}
+        self.P = (V_half_inv.T) @ self.G.T @ self.F @ T_half_inv
+
+        # Equation for Z:
+        # Z = T^{1/2} E U^{1/2} - W
+        #self.Z = self.T_half @ self.E0 @ self.U_half - self.W
+        
+        
+        #self.DR_sdp = self.create_DR_sdp()
         
         print("DR_RO_MF")
             
@@ -94,116 +135,202 @@ class DR_RO_MF:
         x = np.random.rand(N, n)
         x = self.quad_inverse(x, wmax, wmin)
         return x.T
-    
+    import numpy as np
+
+    def compute_operator_matrices(self):
+        """
+        Computes the block operator matrices F, G, J, and L for a discrete-time LTI system
+        with dynamics
+            x_{t+1} = A x_t + B u_t + w_t,
+            y_t     = C x_t + v_t,
+        where the operators are defined over a horizon T.
+        
+        The operators are strictly causal (strictly lower-triangular block Toeplitz):
+            F: maps u to x, where F[t, j] = A^(t-j-1) B for t > j, 0 otherwise;
+            G: maps w to x, where G[t, j] = A^(t-j-1) for t > j, 0 otherwise;
+            J: maps u to y, where J[t, j] = C A^(t-j-1) B for t > j, 0 otherwise;
+            L: maps w to y, where L[t, j] = C A^(t-j-1) for t > j, 0 otherwise.
+        
+        Parameters:
+            T (int): the time horizon (number of time steps)
+        
+        Returns:
+            F (ndarray): Block matrix of shape (T*n_x, T*n_u)
+            G (ndarray): Block matrix of shape (T*n_x, T*n_x)
+            J (ndarray): Block matrix of shape (T*n_y, T*n_u)
+            L (ndarray): Block matrix of shape (T*n_y, T*n_x)
+        """
+        A = self.A  # shape: (n_x, n_x)
+        B = self.B  # shape: (n_x, n_u)
+        C = self.C  # shape: (n_y, n_x)
+        
+        n_x = A.shape[0]
+        n_u = B.shape[1]
+        n_y = C.shape[0]
+        
+        # horizon
+        N = self.N
+        
+        # Initialize block matrices with zeros.
+        F = np.zeros((N * n_x, N * n_u))
+        G = np.zeros((N * n_x, N * n_x))
+        J = np.zeros((N * n_y, N * n_u))
+        L = np.zeros((N * n_y, N * n_x))
+        
+        
+        
+        # Loop over the time steps. Note that for t=0, there is no contribution
+        # from u or w (assuming x0 is given/zero). So we start at t=1.
+        for t in range(1, N):
+            for j in range(t):
+                # Compute A^(t-j-1)
+                A_power = np.linalg.matrix_power(A, t - j - 1)
+                
+                # Fill in the (t,j) block for F: x_t += A^(t-j-1) B u_j
+                F[t*n_x:(t+1)*n_x, j*n_u:(j+1)*n_u] = A_power @ B
+                
+                # Fill in the (t,j) block for G: x_t += A^(t-j-1) w_j
+                G[t*n_x:(t+1)*n_x, j*n_x:(j+1)*n_x] = A_power
+                
+                # Fill in the (t,j) block for J: y_t = C x_t, so contribution from u_j is C A^(t-j-1)B
+                J[t*n_y:(t+1)*n_y, j*n_u:(j+1)*n_u] = C @ A_power @ B
+                
+                # Fill in the (t,j) block for L: contribution from w_j is C A^(t-j-1)
+                L[t*n_y:(t+1)*n_y, j*n_x:(j+1)*n_x] = C @ A_power
+                
+        return F, G, J, L
+
     
     def create_DR_sdp(self):
+        N = self.N
+        
+        # Primary decision variables.
+        X = cp.Variable((N*(self.nx + self.ny), N*(self.nx + self.ny)), 
+                        symmetric=True, name='X')
+        Y = cp.Variable((N*self.nu, N*self.ny), name='Y')  
+        # sub-blocks of X:
+        X11 = cp.Variable((N*self.nx, N*self.nx), symmetric=True, name='X11')
+        X12 = cp.Variable((N*self.nx, N*self.ny), name='X12')
+        X22 = cp.Variable((N*self.ny, N*self.ny), symmetric=True, name='X22')
         
         
-        Y = cp.Variable((self.T * self.nu, self.T * self.ny), name='Y')
-        X = cp.Variable((self.T * (self.nx + self.ny), self.T * (self.nx + self.ny)), symmetric = True, name='X')
-        X11 = cp.Variable((self.T * self.nx, self.T * self.nx))
-        X12 = cp.Variable((self.T * self.nx, self.T * self.ny))
-        X22 = cp.Variable((self.T * self.ny, self.T * self.ny))
+        star = cp.Variable((N*self.nu, N*self.nx), name='star')
         
-        gamma = cp.Parameter(1)
-        radius = cp.Parameter(1)
         
-        I_nx = cp.Constant(np.eye(self.T * self.nx))
-        I_nu = cp.Constant(np.eye(self.T * self.nu))
-        I_ny = cp.Constant(np.eye(self.T * self.ny))
+        gamma = cp.Parameter(nonneg=True, name='gamma')
         
-        Zero_xy = cp.Constant(np.zeros((self.T * self.nx, self.T * self.ny)))
-        Zero_xu = cp.Constant(np.zeros((self.T * self.nx, self.T * self.nu)))
-        Zero_yu = cp.Constant(np.zeros((self.T * self.ny, self.T * self.nu)))
         
-        obj = gamma * (radius**2 - self.T * (self.nx + self.ny)) + cp.trace(X)
+        I_nx = cp.Constant(np.eye(N * self.nx))
+        I_nu = cp.Constant(np.eye(N * self.nu))
+        I_ny = cp.Constant(np.eye(N * self.ny))
         
-        constraints=[
-            Y == cp.tril(Y), # Y is lower triangular 
-            X >> 0,
-            X == cp.bmat([[X11, X12],
-                          [X12.T, X22]]),
-            cp.bmat([[X11, X12, gamma * I_nx, Zero_xy, Zero_xu],
-                    [X12.T, X22, Zero_xy.T, gamma * I_ny, Zero_yu],
-                    [gamma * I_nx, Zero_xy, gamma * I_nx, ]
-                    ]) >> 0
-        ]
-        # V = cp.Variable((self.nx, self.nx), symmetric=True, name='V')
-        # Sigma_wc = cp.Variable((self.nx, self.nx), symmetric=True, name='Sigma_wc')
-        # Y = cp.Variable((self.nx,self.nx), name='Y')
-        # X_pred = cp.Variable((self.nx,self.nx), symmetric=True, name='X_pred')
-        # M_test = cp.Variable((self.ny, self.ny), symmetric=True, name='M_test')
-        # Z = cp.Variable((self.ny, self.ny), name='Z')
+        Zero_xy = cp.Constant(np.zeros((N*self.nx, N*self.ny)))
+        Zero_xu = cp.Constant(np.zeros((N*self.nx, N*self.nu)))
+        Zero_yu = cp.Constant(np.zeros((N*self.ny, N*self.nu)))
         
-        # #Parameters
-        # S_var = cp.Parameter((self.nx,self.nx), name='S_var')
-        # P_var = cp.Parameter((self.nx,self.nx), name='P_var')
-        # Lambda_ = cp.Parameter(1, name='Lambda_')
-        # Sigma_w = cp.Parameter((self.nx, self.nx), name='Sigma_w') # nominal Sigma_w
-        # x_cov = cp.Parameter((self.nx, self.nx), name='x_cov') # x_cov from before time step
-        # M_hat = cp.Parameter((self.ny, self.ny), name='M_hat')
-        # radi = cp.Parameter(nonneg=True, name='radi')
-               
-        # #use Schur Complements
-        # #obj function
-        # obj = cp.Maximize(cp.trace(S_var @ V) + cp.trace((P_var - Lambda_ * np.eye(self.nx)) @ Sigma_wc) + 2*Lambda_*cp.trace(Y)) 
+        # Objective
+        # min or max? Usually it's Minimize for an SDP, but your snippet had no "cp.Minimize(...)"
+        # We'll assume Minimize.
+        obj = cp.Minimize(
+            gamma * (self.radius**2 - N*(self.nx + self.ny)) + cp.trace(X)
+        )
         
-        # #constraints
-        # constraints = [
-        #         cp.bmat([[Sigma_w, Y],
-        #                  [Y.T, Sigma_wc]
-        #                  ]) >> 0,
-        #         X_pred == self.A @ x_cov @ self.A.T + Sigma_wc,
-        #         cp.bmat([[X_pred-V, X_pred @ self.C.T],
-        #                 [self.C @ X_pred, self.C @ X_pred @ self.C.T + M_test]
-        #                 ]) >> 0 ,
-        #         self.C @ X_pred @ self.C.T + M_test >>0,
-        #         cp.trace(M_hat + M_test - 2*Z ) <= radi**2,
-        #         cp.bmat([[M_hat, Z],
-        #                  [Z.T, M_test]
-        #                  ]) >> 0,
-        #         V>>0,
-        #         X_pred >>0,
-        #         M_test >>0,
-        #         Sigma_wc >>0
-        #         ]
+        # Constraints
+        constraints = []
         
-        # prob = cp.Problem(obj, constraints)
+        # 1) Y is lower triangular
+        constraints.append(Y == cp.tril(Y))
+        
+        # 2) X is PSD
+        constraints.append(X >> 0)
+        
+        # 3) X must equal the block composition of [X11, X12; X12^T, X22]
+        constraints.append(
+            X == cp.bmat([[X11,    X12],
+                        [X12.T,  X22]])
+        )
+        
+        # 4) star = M_gamma_inv @ Y + H_gamma
+        #    Because star must equal that expression
+        constraints.append(star == self.M_gamma_inv @ Y + self.H_gamma)
+        
+        # 5) Big LMI block #1
+        # Make sure all blocks line up dimensionally!
+        big_block_1 = cp.bmat([
+            [X11,          X12,           gamma * I_nx,     Zero_xy,          Zero_xu],
+            [X12.T,        X22,           Zero_xy.T,        gamma * I_ny,     Zero_yu],
+            [gamma * I_nx, Zero_xy,       gamma * I_nx,     -self.P @ star,   Zero_xu],
+            [Zero_xy.T,    gamma * I_ny,  -star.T @ self.P.T, gamma * I_ny,   star.T],
+            [Zero_xu.T,    Zero_yu.T,     Zero_xu.T,        star,            I_nu]
+        ])
+        constraints.append(big_block_1 >> 0)
+        
+        # 6) Big LMI block #2
+        #    This must also be PSD. Check shapes carefully!
+        #    If Y and self.W_minus_gamma are each (N*self.nu, N*self.ny),
+        #    then (Y - self.W_minus_gamma) is (N*self.nu, N*self.ny).
+        #    So (Y - self.W_minus_gamma).T is (N*self.ny, N*self.nu).
+        #
+        #    For this block to be conformable with I_nx in the top-left, 
+        #    you'd need Nx == Nu, etc. 
+        #    Possibly you meant to use I_nu in the top-left, or I_ny, etc.
+        #    We'll guess I_nu to match the row dimension of Y.
+        
+        big_block_2 = cp.bmat([
+            [I_nu,                       (Y - self.W_minus_gamma).T],
+            [Y - self.W_minus_gamma,     I_nu]
+        ])
+        constraints.append(big_block_2 >> 0)
+        
+        # Form the problem
+        prob = cp.Problem(obj, constraints)
         return prob
         
-    def solve_DR_sdp(self, prob, P_t1, S_t1, M, X_cov, Sigma_hat, theta, Lambda_):
+    def solve_DR_sdp(self, prob, gamma):
+        
+        N = self.N
+        
+        #    M_gamma = (gamma^{-1} I + gamma^{-2} P^T P)^{1/2}.
+        M_temp = (gamma**(-1)) * np.eye(N * self.nx) + (gamma**(-2)) * (self.P.T @ self.P)
+        self.M_gamma = cholesky(M_temp, lower=True)  # M_gamma is lower triangular and positive definite.
+
+        self.W_gamma = self.M_gamma @ self.W
+
+        #    Here we define W_{+,gamma} as the lower-triangular part (including the diagonal).
+        self.W_plus_gamma = np.tril(self.W_gamma, k=0)
+        # compute the strictly anticausal part as:
+        self.W_minus_gamma = self.W_gamma - self.W_plus_gamma  # strictly anticausal (i.e. the strictly upper triangular part)
+
+        #    Y = M_gamma @ (T^{1/2} E U^{1/2}) - W_{+,gamma}.
+        #    Here T^{1/2} is stored in T_half and U^{1/2} in U_half.
+        #Y = self.M_gamma @ (self.T_half @ self.E0 @ self.U_half) - self.W_plus_gamma
+        
+        self.M_gamma_inv = solve_triangular(self.M_gamma, np.eye(self.M_gamma.shape[0]), lower=True)
+        self.H_gamma = solve_triangular(self.M_gamma, self.W_plus_gamma, lower=True) - self.W
+        
+        
+        self.DR_sdp = self.create_DR_sdp()
+        
         #construct problem
         params = prob.parameters()
         # for i, param in enumerate(params):
         #     print(f"params[{i}]: {param.name()}")
-        params[0].value = S_t1 # S[t+1]
-        params[1].value = P_t1 # P[t+1]
-        params[2].value = Lambda_
-        params[3].value = Sigma_hat
-        params[4].value = X_cov
-        params[5].value = M # Noise covariance
-        params[6].value = theta
+        params[0].value = gamma
         
         
         prob.solve(solver=cp.MOSEK)
-        # if prob.status in ["infeasible", "unbounded"]:
-        #     print("theta_w : ", self.theta_w, " theta_v : ", self.theta_v)
-        #     print("Lambda_:" , Lambda_)
-        #     print(prob.status, 'False in DRCE SDP !!!!!!!!')
+        if prob.status in ["infeasible", "unbounded"]:
+            print("radius : ", self.radius)
+            print("gamma : ", gamma)
+            print(prob.status, 'False in DR RO MF SDP !!!!!!!!')
         
         sol = prob.variables()
         # for i, var in enumerate(sol):
         #     print(f"var[{i}]: {var.name()}")
-        #['V', 'Sigma_wc', 'Y', 'X_pred', 'M_test', 'Z']
         
-        S_xx_opt = sol[3].value
-        #S_xy_opt = S_xx_opt @ self.C.T
-        #S_yy_opt = self.C @ S_xx_opt @ self.C.T + sol[4].value
         
-        M_wc_opt = sol[4].value
-        Sigma_wc_opt = sol[1].value
         cost = prob.value
-        return  S_xx_opt,  Sigma_wc_opt, M_wc_opt, cost, prob.status
+        return   cost, prob.status
     
     
 
@@ -211,31 +338,6 @@ class DR_RO_MF:
         #Get new noisy observation
         obs = self.C @ x + v
         return obs
-
-    def backward(self):
-        offline_start = time.time()
-        self.P[self.T] = self.Qf
-        if self.lambda_ <= np.max(np.linalg.eigvals(self.P[self.T])) or self.lambda_<= np.max(np.linalg.eigvals(self.P[self.T] + self.S[self.T])):
-            print("t={}: False!".format(self.T))
-
-        Phi = self.B @ np.linalg.inv(self.R) @ self.B.T + 1/self.lambda_ * np.eye(self.nx)
-        for t in range(self.T-1, -1, -1):
-            self.P[t], self.S[t], self.r[t], self.z[t], self.K[t], self.L[t], self.H[t], self.h[t], self.g[t] = self.riccati(Phi, self.P[t+1], self.S[t+1], self.r[t+1], self.z[t+1], self.Sigma_hat[t], self.mu_hat[t], self.lambda_, t)
-
-        self.x_cov = np.zeros((self.T+1, self.nx, self.nx))
-        self.S_opt = np.zeros((self.T+1, self.nx + self.ny, self.nx + self.ny))
-        self.S_xx = np.zeros((self.T+1, self.nx, self.nx))
-        self.S_xy = np.zeros((self.T+1, self.nx, self.ny))
-        self.S_yy = np.zeros((self.T+1, self.ny, self.ny))
-        self.sigma_wc = np.zeros((self.T, self.nx, self.nx))
-        self.x_cov[0], self.S_xx[0], self.S_xy[0], self.S_yy[0], _, status= self.DR_kalman_filter_cov_initial(self.M_hat[0], self.x0_cov_hat, self.S[0])
-        
-        for t in range(self.T):
-            print("DRCE Offline step : ",t,"/",self.T)
-            self.x_cov[t+1], self.S_xx[t+1], self.S_xy[t+1], self.S_yy[t+1], self.sigma_wc[t], _, status= self.DR_kalman_filter_cov(self.P[t+1], self.S[t+1], self.M_hat[t+1], self.x_cov[t], self.Sigma_hat[t], self.lambda_)
-        
-        offline_end = time.time()
-        self.offline_time = offline_end - offline_start
 
     def forward(self):
         #Apply the controller forward in time.
